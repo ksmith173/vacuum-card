@@ -53,6 +53,13 @@ export interface VacuumCardShortcut {
   service_data?: Record<string, unknown>;
 }
 
+export interface VacuumCardRoomToggle {
+  name?: string;
+  entity_id: string;
+  enabled_icon: string;
+  disabled_icon: string;
+}
+
 export interface VacuumCardConfig {
   entity: string;
   map: string;
@@ -65,6 +72,7 @@ export interface VacuumCardConfig {
   stats: Record<string, VacuumCardStat[]>;
   actions: Record<string, VacuumCardAction>;
   shortcuts: VacuumCardShortcut[];
+  room_toggles: VacuumCardRoomToggle[];
 }
 
 export interface VacuumServiceCallParams {

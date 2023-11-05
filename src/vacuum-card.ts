@@ -2,6 +2,7 @@ import { CSSResultGroup, LitElement, PropertyValues, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
   hasConfigOrEntityChanged,
+  toggleEntity,
   fireEvent,
   HomeAssistant,
   ServiceCallRequest,
@@ -31,13 +32,13 @@ const PKG_VERSION = 'PKG_VERSION_VALUE';
 console.info(
   `%c VACUUM-CARD %c ${PKG_VERSION}`,
   'color: white; background: blue; font-weight: 700;',
-  'color: blue; background: white; font-weight: 700;'
+  'color: blue; background: white; font-weight: 700;',
 );
 
 if (!customElements.get('ha-icon-button')) {
   customElements.define(
     'ha-icon-button',
-    class extends (customElements.get('paper-icon-button') ?? HTMLElement) {}
+    class extends (customElements.get('paper-icon-button') ?? HTMLElement) {},
   );
 }
 
@@ -86,7 +87,38 @@ export class VacuumCard extends LitElement {
   }
 
   public shouldUpdate(changedProps: PropertyValues): boolean {
-    return hasConfigOrEntityChanged(this, changedProps, false);
+    return (
+      hasConfigOrEntityChanged(this, changedProps, false) ||
+      this.roomToggleEntityChanged(changedProps) ||
+      this.statsEntityChanged(changedProps)
+    );
+  }
+
+  private roomToggleEntityChanged(changedProps: PropertyValues): boolean {
+    const oldHass = changedProps.get('hass') as HomeAssistant | undefined;
+    if (!oldHass) return false;
+    for (const room_toggle of this.config.room_toggles) {
+      const changed =
+        oldHass.states[room_toggle.entity_id] !==
+        this.hass.states[room_toggle.entity_id];
+      if (changed) return true;
+    }
+    return false;
+  }
+
+  private statsEntityChanged(changedProps: PropertyValues): boolean {
+    const oldHass = changedProps.get('hass') as HomeAssistant | undefined;
+    if (!oldHass) return false;
+    const state = this.entity.state;
+    const statsList =
+      this.config.stats[state] || this.config.stats.default || [];
+    for (const stat of statsList) {
+      if (!stat.entity_id) continue;
+      const changed =
+        oldHass.states[stat.entity_id] !== this.hass.states[stat.entity_id];
+      if (changed) return true;
+    }
+    return false;
   }
 
   protected updated(changedProps: PropertyValues) {
@@ -105,7 +137,7 @@ export class VacuumCard extends LitElement {
       this.requestUpdate();
       this.thumbUpdater = setInterval(
         () => this.requestUpdate(),
-        this.config.map_refresh * 1000
+        this.config.map_refresh * 1000,
       );
     }
   }
@@ -127,7 +159,7 @@ export class VacuumCard extends LitElement {
       {
         bubbles: false,
         composed: true,
-      }
+      },
     );
   }
 
@@ -140,7 +172,7 @@ export class VacuumCard extends LitElement {
   private callVacuumService(
     service: ServiceCallRequest['service'],
     params: VacuumServiceCallParams = { request: true },
-    options: ServiceCallRequest['serviceData'] = {}
+    options: ServiceCallRequest['serviceData'] = {},
   ) {
     this.hass.callService('vacuum', service, {
       entity_id: this.config.entity,
@@ -160,7 +192,7 @@ export class VacuumCard extends LitElement {
 
   private handleVacuumAction(
     action: string,
-    params: VacuumActionParams = { request: true }
+    params: VacuumActionParams = { request: true },
   ) {
     return () => {
       if (!this.config.actions[action]) {
@@ -182,7 +214,7 @@ export class VacuumCard extends LitElement {
 
   private renderSource(): Template {
     const { fan_speed: source, fan_speed_list: sources } = this.getAttributes(
-      this.entity
+      this.entity,
     );
 
     if (!sources || !source) {
@@ -201,16 +233,15 @@ export class VacuumCard extends LitElement {
             </span>
           </div>
           ${sources.map(
-            (item, index) =>
-              html`
-                <mwc-list-item
-                  ?activated=${selected === index}
-                  value=${item}
-                  @click=${this.handleSpeed}
-                >
-                  ${localize(`source.${item.toLowerCase()}`) || item}
-                </mwc-list-item>
-              `
+            (item, index) => html`
+              <mwc-list-item
+                ?activated=${selected === index}
+                value=${item}
+                @click=${this.handleSpeed}
+              >
+                ${localize(`source.${item.toLowerCase()}`) || item}
+              </mwc-list-item>
+            `,
           )}
         </ha-button-menu>
       </div>
@@ -295,7 +326,7 @@ export class VacuumCard extends LitElement {
             <div class="stats-subtitle">${subtitle}</div>
           </div>
         `;
-      }
+      },
     );
 
     if (!stats.length) {
@@ -409,7 +440,7 @@ export class VacuumCard extends LitElement {
       case 'docked':
       case 'idle':
       default: {
-        const buttons = this.config.shortcuts.map(
+        const shortcuts = this.config.shortcuts.map(
           ({ name, service, icon, service_data }) => {
             const execute = () => {
               if (service) {
@@ -421,7 +452,23 @@ export class VacuumCard extends LitElement {
                 <ha-icon icon="${icon}"></ha-icon>
               </ha-icon-button>
             `;
-          }
+          },
+        );
+
+        const roomToggles = this.config.room_toggles.map(
+          ({ name, entity_id, enabled_icon, disabled_icon }) => {
+            const toggle = () => {
+              return toggleEntity(this.hass, entity_id);
+            };
+            const state = this.hass.states[entity_id].state;
+            return html`
+              <ha-icon-button label="${name}" @click="${toggle}">
+                <ha-icon
+                  icon="${state == 'on' ? enabled_icon : disabled_icon}"
+                ></ha-icon>
+              </ha-icon-button>
+            `;
+          },
         );
 
         const dockButton = html`
@@ -440,15 +487,9 @@ export class VacuumCard extends LitElement {
               ><ha-icon icon="hass:play"></ha-icon>
             </ha-icon-button>
 
-            <ha-icon-button
-              label="${localize('common.locate')}"
-              @click="${this.handleVacuumAction('locate', { request: false })}"
-              ><ha-icon icon="mdi:map-marker"></ha-icon>
-            </ha-icon-button>
-
             ${state === 'idle' ? dockButton : ''}
             <div class="fill-gap"></div>
-            ${buttons}
+            ${shortcuts} ${roomToggles}
           </div>
         `;
       }

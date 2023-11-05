@@ -2,7 +2,7 @@ import localize from './localize';
 import { VacuumCardConfig } from './types';
 
 export default function buildConfig(
-  config?: Partial<VacuumCardConfig>
+  config?: Partial<VacuumCardConfig>,
 ): VacuumCardConfig {
   if (!config) {
     throw new Error(localize('error.invalid_config'));
@@ -29,5 +29,6 @@ export default function buildConfig(
     stats: config.stats ?? {},
     actions: config.actions ?? {},
     shortcuts: config.shortcuts ?? [],
+    room_toggles: config.room_toggles ?? [],
   };
 }
